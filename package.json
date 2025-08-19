@@ -1,0 +1,39 @@
+{
+  "name": "todo-app",
+  "version": "1.0.0",
+  "description": "A RESTful To-Do application with TypeScript, Express, and MongoDB",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "todo",
+    "api",
+    "typescript",
+    "express",
+    "mongodb"
+  ],
+  "author": "Your Name",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^4.21.1",
+    "dotenv": "^16.4.5",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "joi": "^17.13.1",
+    "express-rate-limit": "^7.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/express-rate-limit": "^6.0.0",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  }
+}
