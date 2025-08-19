@@ -12,7 +12,13 @@ dotenv.config();
 
 // Initialize Express app
 const app: Express = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type"],
+  })
+);
 app.use(express.json());
 
 // Get port from environment or default to 3000
@@ -80,10 +86,12 @@ const userSchema = Joi.object({
 // Validation schema for todo
 const todoSchema = Joi.object({
   title: Joi.string().min(3).max(100).required(),
-  description: Joi.string().optional(),
-  dueDate: Joi.date().optional(),
+  description: Joi.string().optional().allow(""),
+  dueDate: Joi.date().optional().allow(null),
   completed: Joi.boolean().optional(),
-});
+  priority: Joi.string().valid("low", "medium", "high").required(),
+  status: Joi.string().valid("pending", "done").optional().allow(null),
+}).unknown(true);
 
 // Create a new todo (protected)
 // app.post("/todos", async (req: Request, res: Response) => {
@@ -106,17 +114,29 @@ const todoSchema = Joi.object({
 
 app.post("/todos", async (req: Request, res: Response) => {
   try {
-    const { title, status, priority, dueDate } = req.body;
+    // console.log("Received Payload:", req.body); // Debug
+    const { error } = todoSchema.validate(req.body, { abortEarly: false });
+    if (error) {
+      console.log("Validation Error:", error.details); // Debug
+      return res
+        .status(400)
+        .json({ success: false, message: error.details[0].message });
+    }
+
+    const { title, description, dueDate, priority, status } = req.body;
     const newTodo = {
       title,
-      status: status || "pending",
-      priority: priority || "medium",
+      description,
       dueDate: dueDate ? new Date(dueDate) : null,
+      priority,
+      status: status || "pending",
       createdAt: new Date(),
     };
+
     const result = await db.collection("todos").insertOne(newTodo);
     res.json({ success: true, data: result });
   } catch (error) {
+    console.error("Create Todo Error:", error); // Debug
     res.status(500).json({ success: false, message: "Error creating todo" });
   }
 });
@@ -130,6 +150,38 @@ app.post("/todos", async (req: Request, res: Response) => {
 //     res.status(500).json({ success: false, message: "Error fetching todos" });
 //   }
 // });
+
+// Update a todo (protected)
+// Update a todo (protected)
+app.put("/todos/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    console.log("Received Payload:", req.body); // Debug
+    const { error } = todoSchema.validate(req.body, { abortEarly: false });
+    if (error) {
+      console.log("Validation Error:", error.details); // Debug
+      return res
+        .status(400)
+        .json({ success: false, message: error.details[0].message });
+    }
+
+    const result = await db
+      .collection("todos")
+      .updateOne({ _id: new ObjectId(id) }, { $set: req.body });
+
+    if (result.matchedCount === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Todo not found" });
+    }
+
+    // console.log("Updated Todo:", req.body); // Debug
+    res.json({ success: true, message: "Todo updated" });
+  } catch (error) {
+    console.error("Update Todo Error:", error); // Debug
+    res.status(500).json({ success: false, message: "Error updating todo" });
+  }
+});
 
 app.get("/todos", async (req: Request, res: Response) => {
   try {
