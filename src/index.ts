@@ -1,10 +1,11 @@
 import express, { Express, Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
-import { MongoClient, Db } from "mongodb";
+import { MongoClient, Db, ObjectId } from "mongodb";
 import cors from "cors";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+// import jwt from "jsonwebtoken";
 import Joi from "joi";
+import { todo } from "node:test";
 
 // Load environment variables
 dotenv.config();
@@ -15,7 +16,7 @@ app.use(cors());
 app.use(express.json());
 
 // Get port from environment or default to 3000
-const PORT: number = parseInt(process.env.PORT || "3000", 10);
+const PORT = process.env.PORT;
 
 let db: Db;
 let client: MongoClient;
@@ -40,26 +41,26 @@ const connectDB = async (): Promise<void> => {
 };
 
 // JWT authentication middleware
-const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1]; // Bearer <token>
+// const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
+//   const authHeader = req.headers["authorization"];
+//   const token = authHeader && authHeader.split(" ")[1]; // Bearer <token>
 
-  if (!token) {
-    return res
-      .status(401)
-      .json({ success: false, message: "Access token required" });
-  }
+//   if (!token) {
+//     return res
+//       .status(401)
+//       .json({ success: false, message: "Access token required" });
+//   }
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
-    (req as any).user = decoded;
-    next();
-  } catch (error) {
-    return res
-      .status(403)
-      .json({ success: false, message: "Invalid or expired token" });
-  }
-};
+//   try {
+//     const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+//     (req as any).user = decoded;
+//     next();
+//   } catch (error) {
+//     return res
+//       .status(403)
+//       .json({ success: false, message: "Invalid or expired token" });
+//   }
+// };
 
 // Connect to database
 connectDB();
@@ -85,31 +86,101 @@ const todoSchema = Joi.object({
 });
 
 // Create a new todo (protected)
-app.post("/todos", authenticateToken, async (req: Request, res: Response) => {
-  try {
-    const { error } = todoSchema.validate(req.body);
-    if (error) {
-      return res
-        .status(400)
-        .json({ success: false, message: error.details[0].message });
-    }
+// app.post("/todos", async (req: Request, res: Response) => {
+//   // try {
+//   //   const { error } = todoSchema.validate(req.body);
+//   //   if (error) {
+//   //     return res
+//   //       .status(400)
+//   //       .json({ success: false, message: error.details[0].message });
+//   //   }
 
-    const todo = { ...req.body, userId: (req as any).user.email };
-    const result = await db.collection("todos").insertOne(todo);
-    res.json({ success: true, insertedId: result.insertedId });
+//   // const todo = { ...req.body, userId: (req as any).user.email };
+//   const todo = req.body;
+//   const result = await db.collection("todos").insertOne(todo);
+//   res.json({ success: true, insertedId: result.insertedId });
+//   // } catch (error) {
+//   //   res.status(500).json({ success: false, message: "Error inserting todo" });
+//   // }
+// });
+
+app.post("/todos", async (req: Request, res: Response) => {
+  try {
+    const { title, status, priority, dueDate } = req.body;
+    const newTodo = {
+      title,
+      status: status || "pending",
+      priority: priority || "medium",
+      dueDate: dueDate ? new Date(dueDate) : null,
+      createdAt: new Date(),
+    };
+    const result = await db.collection("todos").insertOne(newTodo);
+    res.json({ success: true, data: result });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error inserting todo" });
+    res.status(500).json({ success: false, message: "Error creating todo" });
   }
 });
 
 // Get all todos for the authenticated user
-app.get("/todos", authenticateToken, async (req: Request, res: Response) => {
+// app.get("/todos", async (req: Request, res: Response) => {
+//   try {
+//     const todos = await db.collection("todos").find().toArray();
+//     res.json(todos);
+//   } catch (error) {
+//     res.status(500).json({ success: false, message: "Error fetching todos" });
+//   }
+// });
+
+app.get("/todos", async (req: Request, res: Response) => {
   try {
+    const { status, priority, startDate, endDate, sortBy, order, page, limit } =
+      req.query;
+
+    const query: any = {};
+
+    // Filtering
+    if (status) query.status = status;
+    if (priority) query.priority = priority;
+    if (startDate && endDate) {
+      query.dueDate = {
+        $gte: new Date(startDate as string),
+        $lte: new Date(endDate as string),
+      };
+    }
+
+    // Pagination
+    const pageNum = parseInt(page as string) || 1;
+    const limitNum = parseInt(limit as string) || 10;
+    const skip = (pageNum - 1) * limitNum;
+
+    // Sorting
+    let sort: any = {};
+    if (sortBy) {
+      sort[sortBy as string] = order === "desc" ? -1 : 1;
+    } else {
+      sort = { createdAt: -1 }; // default
+    }
+
     const todos = await db
       .collection("todos")
-      .find({ userId: (req as any).user.email })
+      .find(query)
+      .sort(sort)
+      .skip(skip)
+      .limit(limitNum)
       .toArray();
-    res.json({ success: true, data: todos });
+
+    const total = await db.collection("todos").countDocuments(query);
+
+    res.json({
+      success: true,
+      data: todos,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error fetching todos" });
   }
@@ -177,18 +248,18 @@ app.post("/auth/login", async (req: Request, res: Response) => {
         .json({ success: false, message: "Invalid email or password" });
     }
 
-    const token = jwt.sign(
-      { email: user.email, role: user.role },
-      process.env.JWT_SECRET!,
-      {
-        expiresIn: "1h",
-      }
-    );
+    // const token = jwt.sign(
+    //   { email: user.email, role: user.role },
+    //   process.env.JWT_SECRET!,
+    //   {
+    //     expiresIn: "1h",
+    //   }
+    // );
 
     res.json({
       success: true,
       message: "Login successful",
-      token,
+      // token,
       user: { email: user.email, name: user.name },
     });
   } catch (error) {
