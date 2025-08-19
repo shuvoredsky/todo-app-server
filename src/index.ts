@@ -238,6 +238,19 @@ app.get("/todos", async (req: Request, res: Response) => {
   }
 });
 
+// DELETE todo
+app.delete("/todos/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await db
+      .collection("todos")
+      .deleteOne({ _id: new ObjectId(id) });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error deleting todo" });
+  }
+});
+
 // Create a new user
 app.post("/users", async (req: Request, res: Response) => {
   try {
