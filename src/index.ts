@@ -437,9 +437,13 @@ app.post("/auth/login", async (req: Request, res: Response) => {
 // Get all users (for testing, should be restricted in production)
 app.get("/users", async (req: Request, res: Response) => {
   try {
-    const users = await db.collection("users").find().toArray();
+    const { email } = req.query;
+    const query: any = email ? { email } : {};
+    console.log("Fetching users with query:", query); // Debug
+    const users = await db.collection("users").find(query).toArray();
     res.json({ success: true, data: users });
   } catch (error) {
+    console.error("Fetch Users Error:", error);
     res.status(500).json({ success: false, message: "Error fetching users" });
   }
 });
