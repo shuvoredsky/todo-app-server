@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 // import jwt from "jsonwebtoken";
 import Joi from "joi";
 import { todo } from "node:test";
+import rateLimit from "express-rate-limit";
 
 // Load environment variables
 dotenv.config();
@@ -20,8 +21,20 @@ app.use(
   })
 );
 app.use(express.json());
+// Rate Limiting middleware
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: {
+    success: false,
+    message: "Too many requests, please try again after 15 minutes.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-// Get port from environment or default to 3000
+app.use(limiter);
+
 const PORT = process.env.PORT;
 
 let db: Db;
@@ -123,10 +136,12 @@ app.post("/todos", async (req: Request, res: Response) => {
         .json({ success: false, message: error.details[0].message });
     }
 
-    const { title, description, dueDate, priority, status } = req.body;
+    const { title, description, dueDate, priority, status, userEmail } =
+      req.body;
     const newTodo = {
       title,
       description,
+      userEmail,
       dueDate: dueDate ? new Date(dueDate) : null,
       priority,
       status: status || "pending",
@@ -156,7 +171,7 @@ app.post("/todos", async (req: Request, res: Response) => {
 app.put("/todos/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    console.log("Received Payload:", req.body); // Debug
+    // console.log("Received Payload:", req.body); // Debug
     const { error } = todoSchema.validate(req.body, { abortEarly: false });
     if (error) {
       console.log("Validation Error:", error.details); // Debug
@@ -175,11 +190,83 @@ app.put("/todos/:id", async (req: Request, res: Response) => {
         .json({ success: false, message: "Todo not found" });
     }
 
-    // console.log("Updated Todo:", req.body); // Debug
     res.json({ success: true, message: "Todo updated" });
   } catch (error) {
     console.error("Update Todo Error:", error); // Debug
     res.status(500).json({ success: false, message: "Error updating todo" });
+  }
+});
+
+app.get("/todos/me", async (req: Request, res: Response) => {
+  try {
+    const {
+      userEmail,
+      status,
+      priority,
+      startDate,
+      endDate,
+      sortBy,
+      order,
+      page,
+      limit,
+    } = req.query;
+
+    if (!userEmail) {
+      return res
+        .status(400)
+        .json({ success: false, message: "userEmail is required" });
+    }
+
+    const query: any = { userEmail };
+
+    // Filtering
+    if (status) query.status = status;
+    if (priority) query.priority = priority;
+    if (startDate && endDate) {
+      query.dueDate = {
+        $gte: new Date(startDate as string),
+        $lte: new Date(endDate as string),
+      };
+    }
+
+    // Pagination
+    const pageNum = parseInt(page as string) || 1;
+    const limitNum = parseInt(limit as string) || 10;
+    const skip = (pageNum - 1) * limitNum;
+
+    // Sorting
+    let sort: any = {};
+    if (sortBy) {
+      sort[sortBy as string] = order === "desc" ? -1 : 1;
+    } else {
+      sort = { createdAt: -1 }; // default
+    }
+
+    const todos = await db
+      .collection("todos")
+      .find(query)
+      .sort(sort)
+      .skip(skip)
+      .limit(limitNum)
+      .toArray();
+
+    const total = await db.collection("todos").countDocuments(query);
+
+    res.json({
+      success: true,
+      data: todos,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
+  } catch (error) {
+    console.error("Fetch My Todos Error:", error); // Debug
+    res
+      .status(500)
+      .json({ success: false, message: "Error fetching my todos" });
   }
 });
 
@@ -248,6 +335,21 @@ app.delete("/todos/:id", async (req: Request, res: Response) => {
     res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, message: "Error deleting todo" });
+  }
+});
+
+// PUT update todo
+app.put("/todos/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+    const result = await db
+      .collection("todos")
+      .updateOne({ _id: new ObjectId(id) }, { $set: updateData });
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error updating todo" });
   }
 });
 
